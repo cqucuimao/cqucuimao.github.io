@@ -5,7 +5,7 @@
   
 
 
-<html class="theme-next muse use-motion" lang="zh-Hans">
+<html class="theme-next mist use-motion" lang="zh-Hans">
 <head>
   <meta charset="UTF-8"/>
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
@@ -92,7 +92,7 @@
   var NexT = window.NexT || {};
   var CONFIG = {
     root: '/',
-    scheme: 'Muse',
+    scheme: 'Mist',
     version: '5.1.4',
     sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
     fancybox: true,
@@ -182,6 +182,16 @@
               <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
             
             首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/%20" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            标签
           </a>
         </li>
       
@@ -299,68 +309,15 @@
       
         
           
-            <h2 id="Cinder组件简介"><a href="#Cinder组件简介" class="headerlink" title="Cinder组件简介"></a>Cinder组件简介</h2><p>Openstack 的主要组件有 Nova、Cinder、Neutron、Glance 等，分别负责云平台的计算、存储、网络资源管理。OpenStack 各组件之间是通过 REST 接口进行相互通信，而各组件内部则采用了基于 AMQP 模型的 RPC 通信。下面以cinder组件为例，讲述RPC调用过程。</p>
-<p>在讲述 OpenStack RPC 通信机制之前，首先介绍一下 cinder 系统架构，Cinder 主要由 3 个组件组成，cinder-api, cinder-scheduler 和 cinder-volume：</p>
-<p><img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcche5l2vpj30ve0ia0va.jpg" alt=""></p>
-<ul>
-<li><p>Cinder-api 是 cinder 服务的 endpoint，提供 rest 接口，负责处理 client 请求，并将 RPC 请求发送至 cinder-scheduler 组件。</p>
-</li>
-<li><p>Cinder-scheduler 负责 cinder 请求调度，其核心部分就是 scheduler_driver, 作为 scheduler manager 的 driver，负责 cinder-volume 具体的调度处理，发送 cinder RPC 请求到选择的 cinder-volume。</p>
-</li>
-<li><p>Cinder-volume 负责具体的 volume 请求处理，由不同后端存储提供 volume 存储空间。目前各大存储厂商已经积极地将存储产品的 driver 贡献到 cinder 社区。</p>
-</li>
-</ul>
-<h2 id="Openstack-RPC通信基础"><a href="#Openstack-RPC通信基础" class="headerlink" title="Openstack RPC通信基础"></a>Openstack RPC通信基础</h2><p>Openstack 组件内部的 RPC（Remote Producer Call）机制的实现是基于 AMQP(Advanced Message Queuing Protocol)作为通讯模型，从而满足组件内部的松耦合性。AMQP 是用于异步消息通讯的消息中间件协议，AMQP 模型有四个重要的角色:</p>
-<ul>
-<li>Exchange：根据 Routing key 转发消息到对应的 Message Queue 中</li>
-<li>Routing key：用于 Exchange 判断哪些消息需要发送对应的 Message Queue</li>
-<li>Publisher：消息发送者，将消息发送的 Exchange 并指明 Routing Key，以便 Message Queue 可以正确的收到消息</li>
-<li>Consumer：消息接受者，从 Message Queue 获取消息</li>
-</ul>
-<p>消息发布者 Publisher 将 Message 发送给 Exchange 并且说明 Routing Key。Exchange 负责根据 Message 的 - Routing Key 进行路由，将 Message 正确地转发给相应的 Message Queue。监听在 Message Queue 上的 Consumer 将会从 Queue 中读取消息。</p>
-<p>Routing Key 是 Exchange 转发信息的依据，因此每个消息都有一个 Routing Key 表明可以接受消息的目的地址，而每个 Message Queue 都可以通过将自己想要接收的 Routing Key 告诉 Exchange 进行 binding，这样 Exchange 就可以将消息正确地转发给相应的 Message Queue。</p>
-<p><img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcchgrjj95j30vq0e6dkr.jpg" alt=""></p>
-<p>AMQP 定义了三种类型的 Exchange，不同类型 Exchange 实现不同的 routing 算法：</p>
-<ul>
-<li>Direct Exchange：Point-to-Point 消息模式，消息点对点的通信模式，Direct Exchange 根据 Routing Key 进行精确匹配，只有对应的 Message Queue 会接受到消息</li>
-<li>Topic Exchange：Publish-Subscribe(Pub-sub)消息模式，Topic Exchange 根据 Routing Key 进行模式匹配，只要符合模式匹配的 Message Queue 都会收到消息</li>
-<li>Fanout Exchange：广播消息模式，Fanout Exchange 将消息转发到所有绑定的 Message Queue<br>OpenStack 目前支持的基于 AMQP 模型的 RPC backend 有 RabbitMQ、QPid、ZeroMQ，对应的具体实现模块在 cinder 项目下 Openstack/common/RPC/目录下，impl_*.py 分别为对应的不同 backend 的实现。</li>
-</ul>
-<h2 id="创建-volume-的-RPC-通信过程"><a href="#创建-volume-的-RPC-通信过程" class="headerlink" title="创建 volume 的 RPC 通信过程"></a>创建 volume 的 RPC 通信过程</h2><p>Create volume 的过程可以看做是两个阶段的 RPC 请求处理，第一阶段：</p>
-<ul>
-<li>Client 即 cinder-api 调用 RPC.cast 发送消息，RPC.cast 创建 Topic Publisher 对象，topic 为 cinder-scheduler，也就是消息的 Routing Key，Exchange name 为 OpenStack，消息体中标记了消息接收者即 Server 所需要调用的方法“create_volume”；</li>
-<li>Exchange 接收到消息，根据 Routing Key 将消息发送至 Message Queue cinder-scheduler 上，这个 Message Queue 是由 cinder-scheduler 服务的 Topic Consumer 订阅的，因此，cinder-scheduler 服务将接收到 create_volume 的消息</li>
-<li>Consumer 调用注册的 RPC_dispatcher，即 cinder-scheduler manager，然后由 cinder-scheduler manager 调用 RPC 处理方法 create_volume</li>
-</ul>
-<p><img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcchjdg66wj30xw0f4dil.jpg" alt=""></p>
-<p>Create volume 请求的第二阶段由 cinder-scheduler 的 create_volume 方法调用发起，即 cinder-scheduler 使用 filter and weighing 算法选取了 cinder-volume 的 host 用于创建 volume，则调用 RPC.cast 请求向 host 发送 RPC 请求，这个阶段 cinder-scheduler 为请求发起者即 client，cinder-volume 为请求处理者即 server。</p>
-<ul>
-<li>Cinder-scheduler 调用 RPC.cast，Exchange name 为 Openstack, routing-key 为 cinder-volume:host</li>
-<li>Exchange 接收到消息，根据 Routing Key 将消息发送到队列 cinder-volume:host 上</li>
-<li>在主机 host 上的 Cinder-volume consumer 从 Queue 中接收到 message，回调 RPC_dispatcher 即 cinder-volume manager</li>
-<li>Cinder-volume manger 根据消息体中 method 信息，调用 create_volume 方法，创建 volume</li>
-</ul>
-<p><img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcchkfelbdj30zo0hqjuo.jpg" alt=""></p>
-<h2 id="OpenStack-Notification"><a href="#OpenStack-Notification" class="headerlink" title="OpenStack Notification"></a>OpenStack Notification</h2><p>OpenStack Notification 机制用于通知用户或者开发者当前请求执行状态，在 RPC 通信角色一节中介绍了 Notification Publisher，其实就是一种 Topic Publisher。</p>
-<p>启用 Notification 机制，需要在 Cinder 配置文件中配置 notification_driver。</p>
-<pre><code>notification_driver = cinder.Openstack.common.notifier.RPC_notifier</code></pre><p>Notification priority 提供了 DEBUG, WARN, INFO, ERROR, CRITICAL 五个级别的消息，Cinder 的 notification 的 Exchange name 是 Openstack，topic 是 notifications.priority，例如 notifications.info</p>
-<p>Cinder 项目默认的 Exchange name 是 OpenStack，由于 Exchange 负责信息转发，因此能够看到所有流入 Exchange 的消息，<strong>如果我们仅想要查看 notification 类型的消息，也可以自己创建 Message Queue，使用 Routing key 绑定到 Exchange 上</strong>。</p>
-<p>一种创建 Queue 的简单方法是使用 Qpid 提供的客户端工具 qpid-config。关于 qpid-config 工具的具体使用方法可以通过帮助文档来获取。</p>
-<p>创建接受 notification INFO 级别的消息，则执行如下操作</p>
-<ul>
-<li><p>创建 Message Queue</p>
-<pre><code>qpid-config add Queue notification_info</code></pre><p>  可以通过 qpid-tool 中使用 list Queue 查看已经创建了以 notification.info 为名的 Queue，这里仅仅是创建了 Message Queue</p>
-</li>
-<li><p>建立 Routing Key</p>
-<pre><code>qpid-config [OPTIONS] bind   &lt;Exchange-name&gt; &lt;Queue-name&gt; [binding-key]
-qpid-config bind Openstack notification_info notifications.info</code></pre><p>  建立了 Exchange 和 Message Queue 之间的路由关系，Routing Key 为 notifications.info，只要 Exchange 接收到 Routing Key 为 notifications.info 的消息将会将消息转发至名字为 notification_info 的 Queue 中</p>
-</li>
-<li><p>查看 notifications.info 的消息</p>
-<pre><code>./drain -t 1000 notification_info</code></pre></li>
-</ul>
-<p>使用 cinder 命令创建一个 volume，则能够查看到 notifications.info 的消息内容了。</p>
-
-          
+          Cinder组件简介Openstack 的主要组件有 Nova、Cinder、Neutron、Glance 等，分别负责云平台的计算、存储、网络资源管理。OpenStack 各组件之间是通过 REST 接口进行相互通信，而各组件内部则采用了基于 AMQP 模型的 RPC 通信。下面以cinder组件
+          ...
+          <!--noindex-->
+          <div class="post-button text-center">
+            <a class="btn" href="/2020/02/28/openstack-rpc-cinder/#more" rel="contents">
+              阅读全文 &raquo;
+            </a>
+          </div>
+          <!--/noindex-->
         
       
     </div>
@@ -478,509 +435,19 @@ qpid-config bind Openstack notification_info notifications.info</code></pre><p> 
       
         
           
-            <h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><p>RabbitMQ是一个开源的消息代理和队列服务器，用来通过普通协议在完全不同的应用之前共享数据，RabbitMQ是使用Erlang语言来编写的，并且RabbitMQ是基于AMQP协议的。</p>
-<h2 id="特点"><a href="#特点" class="headerlink" title="特点"></a>特点</h2><ul>
-<li>开源、性能优秀、稳定保障</li>
-<li>提供可靠性信息投递模式（confirm）、返回模式（return）</li>
-<li>API丰富</li>
-<li>集群模式丰富，表达式配置，HA模式，镜像队列模式</li>
-<li>保证数据不丢失的前提下做到高可靠性、可用性</li>
-</ul>
-<h2 id="AMQP高级消息队列协议"><a href="#AMQP高级消息队列协议" class="headerlink" title="AMQP高级消息队列协议"></a>AMQP高级消息队列协议</h2><ul>
-<li>AMQP全称：Advanced Message Queuing Protocol</li>
-<li>AMQP定义：是具有现代特征的二进制协议。是一个提供统一消息服务的应用层标准高级消息队列协议，是应用层协议的一个开发标准，为面向消息的中间件设计。</li>
-</ul>
-<h2 id="AMQP协议模型"><a href="#AMQP协议模型" class="headerlink" title="AMQP协议模型"></a>AMQP协议模型</h2><p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc6dewg9e6j30vc0dsq7v.jpg" alt=""></p>
-<h2 id="AMQP核心概念"><a href="#AMQP核心概念" class="headerlink" title="AMQP核心概念"></a>AMQP核心概念</h2><ul>
-<li>Server：又称为Broker，接受客户端的连接，实现AMQP实体服务</li>
-<li>Connection：连接，应用程序已Broker之间的网络连接</li>
-<li>Channel：网络信道，几乎所有的操作都在Channel中进行，Channel是进行信息读写的通道。客户端可以建立多个Channel，每个Channel代表一个会话任务。</li>
-<li>Message：消息，服务器和应用程序之间传递的数据，由Properties和Body组成。Properties可以对消息进行修饰，比如消息的优先级、延迟等高级特性；Body就是消息内容实体。</li>
-<li>Virtaul host：虚拟主机，用于进行逻辑隔离，最上层的消息路由。一个Virtual host里面可以有若干个Exchange和Queue，同一个Vitual host里面不能有相同名称的Exchange或Queue。</li>
-<li>Exchange：交换机，接收消息，根据路由键转发消息到绑定的队列</li>
-<li>Binding：Exchange和Queue直接的虚拟连接，Binding中可以包含routing key</li>
-<li>Routing key：一个路由规则，虚拟机可用它来确定如何路由一个特定消息</li>
-<li>Queue：也称为Message Queue，消息队列，保存消息并将它们转发给消费者</li>
-</ul>
-<h2 id="RabbitMQ整体架构"><a href="#RabbitMQ整体架构" class="headerlink" title="RabbitMQ整体架构"></a>RabbitMQ整体架构</h2><p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc6dvfxd3rj315w0n6wic.jpg" alt=""></p>
-<h2 id="RabbitMQ消息流转过程"><a href="#RabbitMQ消息流转过程" class="headerlink" title="RabbitMQ消息流转过程"></a>RabbitMQ消息流转过程</h2><p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc6dx4znonj317a0juq6k.jpg" alt=""></p>
-<blockquote>
-<p>Message会携带 exchange信息和routing key，根据exchange信息确定消息传递到哪个exchange，再有exchange根据routing key路由到指定的Message Queue。</p>
-</blockquote>
-<h2 id="RabbitMQ基础操作"><a href="#RabbitMQ基础操作" class="headerlink" title="RabbitMQ基础操作"></a>RabbitMQ基础操作</h2><p>RabbitMQ共有三种主要的操作命令语句：rabbitmqctl、rabbitmq-server、rabbitmq-plugins。其中rabbitmqctl命令是最丰富的。</p>
-<p><strong>常用命令如下：</strong></p>
-<ul>
-<li>启动应用：rabbitmqctl start_app</li>
-<li>关闭应用：rabbitmqctl stop_app</li>
-<li>节点状态：rabbitmqctl status</li>
-</ul>
-<p><strong>用户相关的命令：</strong></p>
-<ul>
-<li>添加用户：rabbitmqctl add_user username password</li>
-<li>列出所有用户：rabbitmqctl list_users</li>
-<li>删除用户：rabbitmqctl delete_user username</li>
-<li>清除用户权限：rabbitmqctl clear_permission -p vhostpath username</li>
-<li>修改用户密码：rabbitmqctl change_password username newpassword</li>
-<li>列出用户权限：rabbitmqctl list_user_permissions username</li>
-</ul>
-<p>案例，新增root用户，并设置root用户的权限和tags：</p>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc8rya9k8mj314y0riwfv.jpg" alt=""></p>
-<p><strong>虚拟主机相关的命令：</strong></p>
-<ul>
-<li>创建虚拟主机：rabbitmqctl add_vhost vhostpath</li>
-<li>列出所有虚拟主机：rabbitmqctl list_vhosts</li>
-<li>列出虚拟主机上的所有权限：rabbitmqctl list_permissions -p vhostpath</li>
-<li>删除虚拟主机：rabbitmqctl delete_vhost vhostpath</li>
-</ul>
-<p><strong>队列相关的命令：</strong></p>
-<ul>
-<li>查看所有队列信息：rabbitmqctl list_queues</li>
-<li>清除队列里的消息：rabbitmqctl -p vhostpath purge_queue blue</li>
-</ul>
-<p><strong>高级命令：</strong></p>
-<ul>
-<li>移除所有数据，要在rabbitmqctl stop_app之后使用：rabbitmqctl reset</li>
-<li>组成集群命令：rabbitmqctl join_cluster <clusternode> [–ram | –disc]</li>
-<li>查看集群状态：rabbitmqctl cluster_status</li>
-<li>修改集群节点的存储形式：rabbitmqctl change_cluster_node_type ram | disc</li>
-<li>摘除节点：rabbitmqctl forget_cluster_node [–offline]</li>
-<li>修改节点名称：rabbitmqctl rename_cluster_node oldnode1 newnode1 [oldnode2] [newnode2] …</li>
-</ul>
-<h2 id="消息生产与消费"><a href="#消息生产与消费" class="headerlink" title="消息生产与消费"></a>消息生产与消费</h2><p>使用Java代码构建消息的生产者与消费者，主要步骤如下：</p>
-<ol>
-<li>获取连接工厂：ConnectionFactory</li>
-<li>获取一个连接：Connection</li>
-<li>数据通信信道，可以发送个接收消息：Channel</li>
-<li>具体的消息存储队列：Queue</li>
-<li>生产者和消费者：Productor &amp; Consumer</li>
-</ol>
-<ul>
-<li><p>生产者端代码：</p>
-<pre><code>package com.rabbitmq.quickstart;
-
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
-
-public class Procuder {
-    public static void main(String[] args) throws Exception{
-        //1. 创建一个链接工厂，并进行配置
-        ConnectionFactory connectionFactory = new ConnectionFactory();
-        connectionFactory.setHost(&quot;127.0.0.1&quot;);
-        connectionFactory.setPort(5672);
-        connectionFactory.setVirtualHost(&quot;/&quot;);
-        //2. 通过连接工厂创建连接
-        Connection connection = connectionFactory.newConnection();
-        //3. 通过connection创建一个channel
-        Channel channel = connection.createChannel();
-        //4. 通过channel发送数据
-        String msg = &quot;Hello World&quot;;
-        channel.basicPublish(&quot;&quot;,&quot;test001&quot;,null,msg.getBytes());
-        System.out.println(&quot;生产端消息：&quot; + msg);
-        //5. 关闭连接
-        channel.close();
-        connection.close();
-    }
-}</code></pre></li>
-<li><p>消费者端代码：</p>
-<pre><code>package com.rabbitmq.quickstart;
-
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.ConnectionFactory;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.QueueingConsumer;
-import com.rabbitmq.client.QueueingConsumer.Delivery;
-
-@SuppressWarnings(&quot;ALL&quot;)
-public class Consumer {
-    public static void main(String[] args) throws Exception{
-        //1. 创建一个链接工厂，并进行配置
-        ConnectionFactory connectionFactory = new ConnectionFactory();
-        connectionFactory.setHost(&quot;localhost&quot;);
-        connectionFactory.setPort(5672);
-        connectionFactory.setVirtualHost(&quot;/&quot;);
-        //2. 通过连接工厂创建连接
-        Connection connection = connectionFactory.newConnection();
-        //3. 通过connection创建一个channel
-        Channel channel = connection.createChannel();
-        //4. 声明（创建）一个队列
-        String queueName = &quot;test001&quot;;
-        channel.queueDeclare(queueName,true,false,false,null);
-        //5. 创建消费者
-        QueueingConsumer queueingConsumer = new QueueingConsumer(channel);
-
-        //6. 设置channel
-        channel.basicConsume(queueName, true, queueingConsumer);
-        //7. 获取消息
-        while(true){
-            try{
-                Delivery delivery = queueingConsumer.nextDelivery();
-                String msg = new String(delivery.getBody());
-                System.err.println(&quot;消费端消息：&quot; + msg);
-            }catch (Exception e){
-                e.printStackTrace();
-            }
-        }
-    }
-}</code></pre></li>
-<li><p>先运行消费者端代码，开始监听消息：</p>
-</li>
-</ul>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc8tobz9fmj312s04gglj.jpg" alt=""></p>
-<ul>
-<li>然后运行生产者端代码，发布消息：</li>
-</ul>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc8tlnxmy0j3148068mx7.jpg" alt=""></p>
-<ul>
-<li>最后查看消费端是否收到生产端发送的消息：</li>
-</ul>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc8tmcyw5kj30wk03s3yh.jpg" alt=""></p>
-<h2 id="Exchange交换机"><a href="#Exchange交换机" class="headerlink" title="Exchange交换机"></a>Exchange交换机</h2><ul>
-<li>Exhange：接收消息，并根据路由键转发消息到队列。</li>
-</ul>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc8sefanvxj30yu0hctgz.jpg" alt=""></p>
-<ul>
-<li><p>交换机的属性</p>
-<ul>
-<li>Name：交换机名称</li>
-<li>Type：交换机类型 direct/topic/fanout/headers</li>
-<li>Durability：是否需要持久化，true为持久化</li>
-<li>Auto Delete：当最后一个绑定到exchange上的队列删除后，自动删除该exchange</li>
-<li>Internal：当前exchange是否用于RabbitMQ内部使用，默认为false</li>
-<li>Argument：扩展参数，用户扩展AMQP协议自制定化使用</li>
-</ul>
-</li>
-<li><p>Direct Exchange</p>
-<ul>
-<li><p>所有发送到Direct Exchange的消息被转发到Routing Key中指定的Queue</p>
-<blockquote>
-<p>注：Direct模式可以使用RabbitMQ自带的 default exchange，default exchange不需要将exchange进行任何绑定（binding）操作，消息传递时，Routing Key必须完全匹配才会被队列接收，否则该消息会被抛弃。</p>
-</blockquote>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc8so8zulfj316y0na76l.jpg" alt=""></p>
-</li>
-</ul>
-</li>
-<li><p>Topic Exchange</p>
-<ul>
-<li><p>所有发送到topic exchange的消息被转发到所有关心routing key中指定的topic的queue上。</p>
-</li>
-<li><p>exchange将routing key 和某topic进行模糊匹配，此时队列需要绑定一个topic。</p>
-<blockquote>
-<p>注：可以使用通配符进行模糊匹配</p>
-<p>符号‘#’匹配一个或多个词</p>
-<p>符号‘*’匹配一个词</p>
-<p>例如：log.# 能够匹配到 log.info.la</p>
-<p>log.* 只能匹配到 log.err</p>
-</blockquote>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc9k85ihp1j316e0pitcv.jpg" alt=""></p>
-</li>
-</ul>
-</li>
-<li><p>Fanout Exchange</p>
-<ul>
-<li><p>不处理路由键，只需要简单的将队列绑定到交换机上</p>
-</li>
-<li><p>发送到交换机的消息都会被转发到与该交换机绑定的所有队列上</p>
-</li>
-<li><p>fanout交换机转发消息是最快的</p>
-<blockquote>
-<p>注：不使用routing key。</p>
-</blockquote>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc9l49wtzlj315m0p0jtv.jpg" alt=""></p>
-</li>
-</ul>
-</li>
-</ul>
-<h2 id="其他概念详解"><a href="#其他概念详解" class="headerlink" title="其他概念详解"></a>其他概念详解</h2><ul>
-<li><p>Binding绑定</p>
-<ul>
-<li>Exchange和Exchange，Exchange和Queue直接的连接关系</li>
-<li>Binding中可以包含routing key路由规则</li>
-</ul>
-</li>
-<li><p>Queue消息队列</p>
-<ul>
-<li>消息队列，实际存储消息数据</li>
-<li>Durability：是否持久化，Durable为是，Transient为否</li>
-<li>Auto Delete：如选yes，代表当最后一个监听被移除之后，该Queue会自动被删除</li>
-</ul>
-</li>
-<li><p>Message消息</p>
-<ul>
-<li>服务器和应用程序之间传递的数据</li>
-<li>本质上就是一段数据，由Properties和Payload(Body)组成</li>
-<li>常用属性：delivery mode、headers（自定义属性）</li>
-<li>其他属性：content_type、content_encoding、priority、correlation_id、reply_to、expiration、message_id、timestamp、type、user_id、app_id…</li>
-</ul>
-</li>
-<li><p>Virtual Host虚机主机</p>
-<ul>
-<li><p>虚机地址，用于进行逻辑隔离，最上层的消息路由</p>
-</li>
-<li><p>一个Virtual Host里面可以有若干个exchange和queue</p>
-</li>
-<li><p>同一个virtual host里面不能有相同名称的exchange和queue</p>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gcawzji80zj30vt0u0mys.jpg" alt=""></p>
-</li>
-</ul>
-</li>
-</ul>
-<h2 id="RabbitMQ高级属性"><a href="#RabbitMQ高级属性" class="headerlink" title="RabbitMQ高级属性"></a>RabbitMQ高级属性</h2><ul>
-<li><p>消息如何保障100%的投递成功</p>
-<ol>
-<li><p>什么是生产端的可靠性投递？</p>
-<ul>
-<li>保障消息的成功发出</li>
-<li>保障MQ节点的成功接收</li>
-<li>发送端收到MQ节点（Broker）确认应答</li>
-<li>完善的消息补偿机制</li>
-</ul>
-</li>
-<li><p>互联网大厂的解决方案</p>
-<ul>
-<li>消息落库，对消息状态进行打标</li>
-<li>消息的延迟投递，做二次确认，回调检查</li>
-</ul>
-</li>
-<li><p>生产端可靠性投递方案–消息落库</p>
-<p> <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gcaxh9ckf3j317a0jwtar.jpg" alt=""></p>
-<blockquote>
-<p>step1: 消息投递之前先存数据库，BIZ DB是指业务数据库，MSG DB是指消息数据库，专门存储message</p>
-<p>step2: 进行消息投递，将消息发送的MQ Broker</p>
-<p>step3: 消息确认，broker发送确认消息给生产端，表示消息接收成功</p>
-<p>step4: 将MSG DB中message的status字段更新为status:1，表示该消息已经发送成功</p>
-<p>如果在执行step3的时候由于网络等原因导致确认消息发送失败，那么生产端无法收到确认消息，message的status会一直未0，这种情况就需要依靠其他任务来辅助，比如图中的分布式定时任务。</p>
-<p>step5: 分布式定时任务，定时无获取MSG DB中的messge的status字段信息，如果发现status为0，将会执行消息重传</p>
-<p>step6: 重传消息</p>
-<p>step7：定时任务中会设置消息重传的次数，如图所示，若重传次数大于3，会将message的status设置为2，表示该消息发送失败</p>
-</blockquote>
-</li>
-<li><p>生产端可靠性投递–消息延迟投递</p>
-<ul>
-<li><p>消息落库的方式在高并发场景下不适用</p>
-</li>
-<li><p>消息延迟投递，做二次确认，回调检查</p>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gcay0bub2zj317e0lwjtc.jpg" alt=""></p>
-</li>
-</ul>
-</li>
-</ol>
-</li>
-<li><p>幂等性概念</p>
-<ol>
-<li><p>幂等性是什么</p>
-<p> 对一个结果执行一次或多次操作后的结果都相同的，唯一的，这就是幂等性。</p>
-<blockquote>
-<p>借鉴数据库的乐观锁机制：</p>
-<p>比如执行一条更新库存的SQL语句：</p>
-<p>UPDATE T_REPS SET COUNT = COUNT + 1, VERSION = VERSION + 1 WHERE VERSION = 1；</p>
-</blockquote>
-</li>
-<li><p>消费端-幂等性保障</p>
-<p> 在海量订单产生的业务高峰期，如何避免消息的重复消费问题？</p>
-<ul>
-<li>消费端实现幂等性，就意味着消息永远不会被消费多次，即使收到了多条一样的消息</li>
-<li>业界主流的幂等性操作（尤其是互联网金融领域）：<ul>
-<li>唯一ID + 指纹码机制，利用数据库主键去重</li>
-<li>利用redis的原子性实现</li>
-</ul>
-</li>
-</ul>
-</li>
-<li><p>消费端幂等性方案–唯一ID + 指纹码</p>
-<ul>
-<li>唯一ID + 指纹码 机制，利用数据库主键去重</li>
-<li>SELECT COUNT(1) FROM T_ORDER WHERE ID = 唯一ID + 指纹码</li>
-<li>好处：实现简单</li>
-<li>坏处：高并发下有数据库写入的性能瓶颈</li>
-<li>解决方案：根据ID进行分库分表，进行算法路由（哈希算法）</li>
-</ul>
-</li>
-<li><p>消费端幂等性方案–redis原子性</p>
-<ul>
-<li>使用redis进行幂等，需要考虑的问题<ul>
-<li>第一：是否要进行数据落库，如果落库的话，关键解决的问题是数据库和缓存如何做到原子性？</li>
-<li>第二：如果不进行落库，那么都存储到缓存中，如何设置定时同步的策略？</li>
-</ul>
-</li>
-</ul>
-</li>
-</ol>
-</li>
-<li><p>Confirm确认消息</p>
-<ol>
-<li><p>理解Confirm消息确认机制：</p>
-<ul>
-<li><p>消息的确认，是指生产者投递消息之后，如果broker收到消息，则会给生产者一个应答</p>
-</li>
-<li><p>生产者进行接收应答，用来确定这条消息是否成功的发送到broker，这种方式也是消息的可靠性投递的核心保障</p>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gcazapn227j310q0hkwgo.jpg" alt=""></p>
-</li>
-</ul>
-</li>
-<li><p>如何实现Confirm确认消息</p>
-<ul>
-<li>第一步：在channel上开启确认模式：channel.confirmSelect()</li>
-<li>第二步：在channel上添加监听：addConfirmListener, 监听成功和失败的返回结果，根据具体的结果对消息进行重新发送、或记录日志等后续处理</li>
-</ul>
-</li>
-</ol>
-</li>
-<li><p>Return消息机制</p>
-<p>  Return Listener用于处理一些不可路由的消息！</p>
-<ul>
-<li><p>消息的生产者，通过指定一个exchange和routing key，把消息发送到某一个队列中，然后消费者监听队列，进行消费处理操作</p>
-</li>
-<li><p>但是在某些情况下，如果在发送消息的时候，当前的exchange不存在或者指定的routing key路由不到，这个时候如果需要监听这种不可达的消息，就要使用return listener。</p>
-</li>
-<li><p>在基础API中有一个关机的配置项：</p>
-<ul>
-<li>Mandatory（默认为false, 使用return消息机制时需设置为true），如果为true，则监听器会接收到路由不可达的消息，然后进行后续处理；如果为false，那么broker会自动删除该消息。</li>
-</ul>
-</li>
-<li><p>return机制流程机制：</p>
-<p><img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcba4tisx6j30xu0fgdgj.jpg" alt=""></p>
-</li>
-</ul>
-</li>
-<li><p>消费端自定义监听</p>
-<ul>
-<li>一般消费端监听就是在代码中编写while循环，进行consumer.nextDelivery方法进行获取下一条消息，然后进行消费处理。</li>
-<li>在实际工作中最常用的方式是使用自定义的Consumer，解耦性也更强，通过继承DefaultConsumer类实现</li>
-</ul>
-</li>
-<li><p>消费端限流</p>
-<ul>
-<li><p>什么是消费端的限流？</p>
-<ul>
-<li>假设一个场景，首先，rabbitmq服务器上有上万条未处理的消息，随便打开一个消费者客户端，会出现以下情况：巨量的消息瞬间全部推送过滤，但是单个客户端无法同时处理这个多数据。</li>
-</ul>
-</li>
-<li><p>消费端限流的解释</p>
-<ul>
-<li><p>rabbitmq提供了一种qos（服务质量保证）功能，即在<strong>非自动确认消息</strong>的前提下，如果一定数目的消息（通过基于consumer或者channel设置qos的值）未被确认前，不消费新的消息。</p>
-<blockquote>
-<p>非自动确认即手工ACK</p>
-</blockquote>
-</li>
-</ul>
-</li>
-</ul>
-</li>
-<li><p>消费端ACK和重回队列</p>
-<p>  消费端的手工ACK包括：ACK（接收成功）和NACK（接收失败）</p>
-<ul>
-<li><p>消费端进行消费的时候，如果由于业务异常可以进行日志的记录，然后进行补偿</p>
-</li>
-<li><p>如果由于服务器宕机等严重问题，那就需要手工进行ACK保障消费端消费成功</p>
-<p>消费端的重回队列</p>
-</li>
-<li><p>消费端重回队列是为了针对没有处理成功的消息，把消息重新传递给broker</p>
-</li>
-<li><p>一般实际的应用中都会关闭重回队列，也就是设置为false</p>
-</li>
-</ul>
-</li>
-<li><p>TTL队列/消息</p>
-<ul>
-<li>TTL是Time To Live的缩写，也就是生存时间</li>
-<li>rabbitmq支持消息的过期时间，在消息发送时进行制定</li>
-<li>rabbitmq支持队列的过期时间，从消息入队列开始计算，只要超过了队列的超时时间，那么消息会被自动清除</li>
-</ul>
-</li>
-<li><p>死信队列</p>
-<ul>
-<li><p>死信队列：DLX, Dead-Letter-Exchange</p>
-</li>
-<li><p>利用DLX, 当消息在一个队列中变成死信（dead message）之后，它能被重新publish到另一个exchange，这个exchange就是DLX。</p>
-</li>
-<li><p>消息变成死信有以下几种情况：</p>
-<ul>
-<li>消息被拒绝（basic.reject/basic.nack）并且requeue=false</li>
-<li>消息TTL过期</li>
-<li>队列达到最大长度</li>
-</ul>
-</li>
-<li><p>死信队列</p>
-<ul>
-<li>DLX也是一个正常的exchange，和一般的exchange没有区别，它能在任何的队列上被指定，实际上就是设置某个队列的属性</li>
-<li>当这个队列中有死信时，rabbitmq就会自动的将这个消息重新发布到设置的exchange上去进而被路由到另一个队列</li>
-<li>可以监听这个队列中的消息并做相应的处理，这个特性可以弥补rabbitmq3.0以前支持的immediate参数的功能</li>
-</ul>
-</li>
-<li><p>死信队列设置的步骤：</p>
-<ul>
-<li><p>首先需要设置死信队列的exchange和queue，然后进行绑定</p>
-<ul>
-<li>Exchange: dlx.exchange</li>
-<li>Queue: dlx.queue</li>
-<li>RoutingKey: #（任何路由）</li>
-</ul>
-</li>
-<li><p>然后在进行正常声明交换机、队列、绑定，只不过在队列上需要加上一个参数即可：arguments.put(“x-dead-letter-exchange”, “dlx.exchange”);</p>
-</li>
-<li><p>这样在消息过期、requeue、队列达到最大长度时，消息就可以直接路由到死信队列中去</p>
-</li>
-</ul>
-</li>
-</ul>
-</li>
-</ul>
-<h2 id="RabbitMQ集群"><a href="#RabbitMQ集群" class="headerlink" title="RabbitMQ集群"></a>RabbitMQ集群</h2><ul>
-<li><p>RabbitMQ集群架构模式–主备模式</p>
-<ul>
-<li><p>主备模式：实现rabbitmq的高可用集群，一般在并发和数据量不高的情况下，这种模型非常好用且简单。主备模式也称之为Warren模式</p>
-</li>
-<li><p>RabbitMQ主备模式架构：</p>
-<p><img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcc23i51akj31620lgjv5.jpg" alt=""></p>
-</li>
-<li><p>HaProxy配置说明：</p>
-<pre><code>listen rabbitmq_cluster
-bind 0.0.0.0:5672   
-mode tcp       # 配置tcp模式
-balance roundrobin   # 简单的轮询
-server server10 192.168.1.10:5672 check inter 5000 rise 2 fall 2  # 主节点
-server server11 192.168.1.11:5672 backup check inter 5000 rise 2 fall 2 # 备节点</code></pre><blockquote>
-<p>注：inter 5000 表示每个5秒钟对mq集群做一次健康检查</p>
-<p>rise 2 表示2次正确代表服务可用</p>
-<p>fall 2 表示2次失败代表服务不可用</p>
-</blockquote>
-</li>
-</ul>
-</li>
-<li><p>RabbitMQ集群架构模式–远程模式（使用较少）</p>
-<ul>
-<li>远程模式：远程模式是可以实现双活的一种模式，简称为Shovel模式，所谓Shovel就是可以把消息进行不同数据中心的复制工作，可以跨地域让两个mq集群互联</li>
-<li>通过使用Shovel插件实现</li>
-</ul>
-</li>
-</ul>
-<ul>
-<li><p>RabbitMQ集群架构模式–镜像模式</p>
-<ul>
-<li><p>镜像模式：这是一种非常经典的mq集群模式–Mirror镜像模式，可以保证100%数据不丢失，在实际工作中也是使用最多的。并且实现该集群模式的非常简单，一般互联网大厂都会构建这种集群模式。</p>
-</li>
-<li><p>镜像队列：目的是为了保证rabbitmq数据的高可靠性，主要实现数据的同步，一般2-3个节点实现数据同步。</p>
-</li>
-<li><p>镜像模式架构：</p>
-<p><img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcc2mt5p7gj318w0k87at.jpg" alt=""></p>
-</li>
-</ul>
-</li>
-<li><p>RabbitMQ集群架构模式–多活模式</p>
-<ul>
-<li><p>多活模式：这种模式也是实现异地数据复制的主流模式，因为Shovel模式配置比较复杂，所以一般实现异地集群都是使用这种双活或多活模型来实现。这种模式需要依赖rabbitmq的federation插件，可以实现持续可靠的AMQP数据通信，多活模式的实际配置与应用也非常简单。</p>
-</li>
-<li><p>Federation插件是一个不需要构建cluster，而在broker直接传输消息的高性能插件，federation插件可以在brokers或者cluster直接传输消息，连接的双方可以使用不同的users和virtual hosts，双方也可以使用版本不同的rabbitmq和Erlang。federation插件使用AMQP协议，可以接收不连续的传输。</p>
-</li>
-<li><p>多活模式架构：</p>
-<p><img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcc2rpdi7cj318w0ksjx3.jpg" alt="">    </p>
-</li>
-</ul>
-</li>
-</ul>
-
-          
+          简介RabbitMQ是一个开源的消息代理和队列服务器，用来通过普通协议在完全不同的应用之前共享数据，RabbitMQ是使用Erlang语言来编写的，并且RabbitMQ是基于AMQP协议的。
+特点
+开源、性能优秀、稳定保障
+提供可靠性信息投递模式（confirm）、返回模式（return）
+API丰
+          ...
+          <!--noindex-->
+          <div class="post-button text-center">
+            <a class="btn" href="/2020/02/28/note-rabbitmq/#more" rel="contents">
+              阅读全文 &raquo;
+            </a>
+          </div>
+          <!--/noindex-->
         
       
     </div>
@@ -1098,66 +565,23 @@ server server11 192.168.1.11:5672 backup check inter 5000 rise 2 fall 2 # 备节
       
         
           
-            <h2 id="Github创建仓库"><a href="#Github创建仓库" class="headerlink" title="Github创建仓库"></a>Github创建仓库</h2><p>仓库名称必须为：username.github.io。如下图所示：</p>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc7txvumblj31dw0u0jsp.jpg" alt=""></p>
-<h2 id="安装git-nodejs"><a href="#安装git-nodejs" class="headerlink" title="安装git/nodejs"></a>安装git/nodejs</h2><p>安装步骤省略，安装完成后使用以下命令验证是否安装成功：</p>
-<pre><code># 验证git
+          Github创建仓库仓库名称必须为：username.github.io。如下图所示：
+
+安装git/nodejs安装步骤省略，安装完成后使用以下命令验证是否安装成功：
+# 验证git
 git --version
 
 # 验证nodejs
-node -v</code></pre><h2 id="安装hexo"><a href="#安装hexo" class="headerlink" title="安装hexo"></a>安装hexo</h2><p>执行下面的命令进行安装：</p>
-<pre><code>npm install -g hexo-cli
-npm install hexo --save</code></pre><p>创建博客文件夹，并初始化博客框架：</p>
-<pre><code># 创建博客目录
-mkdir hexo_blog
-
-# 进入博客目录
-cd hexo_blog
-
-# 初始化
-hexo init
-
-# 启动服务
-hexo s</code></pre><p>出现以下内容说明启动成功：</p>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc7u3siv0ij30w0034748.jpg" alt=""></p>
-<p>浏览器访问：<a href="http://localhost:4000" target="_blank" rel="noopener">http://localhost:4000</a></p>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc7u59sy35j31nw0u0jzc.jpg" alt=""></p>
-<h2 id="博客关联到github仓库"><a href="#博客关联到github仓库" class="headerlink" title="博客关联到github仓库"></a>博客关联到github仓库</h2><p>编辑hexo_blog目录下的文件<code>_config.yml</code>，在文档的最后修改内容如下：</p>
-<p><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc7ucpdclzj30s007q0ss.jpg" alt=""></p>
-<p>然后在目录下执行以下命令：</p>
-<pre><code># 生成静态页面
-hexo g
-
-# 部署到github上
-hexo d</code></pre><blockquote>
-<p>注：执行hexo的时候报错，报错内容如下：<br><img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc7ueuapl7j30ji026web.jpg" alt=""></p>
-<p>网上查询以后找的解决办法，执行以下命令即可：</p>
-<p>npm install –save hexo-deployer-git</p>
-</blockquote>
-<h2 id="博客的基本使用"><a href="#博客的基本使用" class="headerlink" title="博客的基本使用"></a>博客的基本使用</h2><ul>
-<li><p>创建新的文章</p>
-<pre><code>hexo new &quot;test&quot;</code></pre><p>  执行完命令后，会生成一个test.md文件：</p>
-<p>  <img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcc4ldy0kjj30su02amx2.jpg" alt=""></p>
-</li>
-<li><p>发布并更新github</p>
-<pre><code>hexo g -d</code></pre><p>  若执行结果如下，则表示成功：</p>
-<p>  <img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcc4oiwya8j31f80sedi0.jpg" alt=""></p>
-</li>
-</ul>
-<h2 id="博客美化及功能添加"><a href="#博客美化及功能添加" class="headerlink" title="博客美化及功能添加"></a>博客美化及功能添加</h2><ul>
-<li><p>下载next主题</p>
-<pre><code>cd /Users/cuimao/Program/hexo_blog
-git clone https://github.com/iissnan/hexo-theme-next themes/next</code></pre></li>
-<li><p>修改站点配置文件</p>
-<p>  _config.yml，将theme由landscape修改为next:</p>
-<p>  <img src="https://tva1.sinaimg.cn/large/00831rSTgy1gcc4zas8d8j30x20ayq38.jpg" alt=""></p>
-</li>
-<li><p>重新发布</p>
-<pre><code>hexo g -d</code></pre></li>
-</ul>
-<h2 id="更多配置修改"><a href="#更多配置修改" class="headerlink" title="更多配置修改"></a>更多配置修改</h2><p>请参考：<a href="https://hexo.io/zh-cn/docs/configuration" target="_blank" rel="noopener">https://hexo.io/zh-cn/docs/configuration</a></p>
-
-          
+node -v安装hexo执行下面的命令进行安装：
+npm i
+          ...
+          <!--noindex-->
+          <div class="post-button text-center">
+            <a class="btn" href="/2020/02/28/start-hexo/#more" rel="contents">
+              阅读全文 &raquo;
+            </a>
+          </div>
+          <!--/noindex-->
         
       
     </div>
@@ -1261,6 +685,22 @@ git clone https://github.com/iissnan/hexo-theme-next themes/next</code></pre></l
           
 
           
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/cqucuimao" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+                  <span class="links-of-author-item">
+                    <a href="mailto:cqucuimao@126.com" target="_blank" title="E-Mail">
+                      
+                        <i class="fa fa-fw fa-envelope"></i>E-Mail</a>
+                  </span>
+                
+            </div>
+          
 
           
           
@@ -1305,7 +745,7 @@ git clone https://github.com/iissnan/hexo-theme-next themes/next</code></pre></l
 
 
 
-  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Mist</a> v5.1.4</div>
 
 
 
